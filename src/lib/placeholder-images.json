@@ -1,0 +1,40 @@
+{
+  "placeholderImages": [
+    {
+      "id": "1",
+      "description": "A high-quality chef's knife.",
+      "imageUrl": "https://picsum.photos/seed/knife/400/300",
+      "imageHint": "chef knife"
+    },
+    {
+      "id": "2",
+      "description": "A wooden cutting board.",
+      "imageUrl": "https://picsum.photos/seed/board/400/300",
+      "imageHint": "cutting board"
+    },
+    {
+      "id": "3",
+      "description": "A stainless steel mixing bowl.",
+      "imageUrl": "https://picsum.photos/seed/bowl/400/300",
+      "imageHint": "mixing bowl"
+    },
+    {
+      "id": "4",
+      "description": "A set of measuring spoons.",
+      "imageUrl": "https://picsum.photos/seed/spoons/400/300",
+      "imageHint": "measuring spoons"
+    },
+    {
+      "id": "5",
+      "description": "A non-stick frying pan.",
+      "imageUrl": "https://picsum.photos/seed/pan/400/300",
+      "imageHint": "frying pan"
+    },
+    {
+      "id": "6",
+      "description": "A large stockpot.",
+      "imageUrl": "https://picsum.photos/seed/stockpot/400/300",
+      "imageHint": "stock pot"
+    }
+  ]
+}
