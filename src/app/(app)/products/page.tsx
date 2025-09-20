@@ -57,7 +57,6 @@ export default function ProductsPage() {
 
         const data = await response.json();
         setProducts(data?.data);
-        console.log('Customer saved:', data);
       } catch (err) {
         console.error('Failed to save customer:', err);
       }

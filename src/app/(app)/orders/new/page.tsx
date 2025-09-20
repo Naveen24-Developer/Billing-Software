@@ -245,7 +245,7 @@ export default function CreateOrderPage() {
       });
 
       // Navigate to orders list or order details
-      router.push('/orders');
+      router.push('/reports');
     } catch (error: any) {
       console.error('Error creating order:', error);
       toast({

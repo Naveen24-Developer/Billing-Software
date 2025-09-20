@@ -1,6 +1,6 @@
 import { db } from "@/lib/db/pg/db.pg";
 import { orders, orderItems, customers, products, vehicles } from "@/lib/db/pg/schema.pg";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 
 // Updated Order type that matches your frontend structure
 export interface Order {
@@ -82,13 +82,13 @@ function calculatePriceDetails(
 
   let discountAmount = 0;
   const discountVal = Number(discountValue) || 0;
-  
+
   if (discountType === 'fixed') {
     discountAmount = discountVal;
   } else if (discountType === 'percentage') {
     discountAmount = price * (discountVal / 100);
   }
-  
+
   const deliveryChargeVal = Number(deliveryCharge) || 0;
   const total = price - discountAmount + deliveryChargeVal;
   const remainingAmount = total - (Number(initialPaid) || 0);
@@ -292,11 +292,87 @@ export async function getOrderById(id: string): Promise<Order | null> {
 }
 
 // Create new order
+// export async function createOrder(data: CreateOrderData): Promise<Order> {
+//   // Start transaction
+//   const result = await db.transaction(async (tx) => {
+//     // Insert order
+//     const [orderRow] = await tx
+//       .insert(orders)
+//       .values({
+//         customerId: data.customerId,
+//         deliveryAddress: data.deliveryAddress,
+//         pickupRequired: data.pickupRequired,
+//         vehicleId: data.vehicleId || null,
+//         remarks: data.remarks || null,
+//         discountType: data.discountType || null,
+//         discountValue: data.discountValue?.toString() || '0',
+//         deliveryCharge: data.deliveryCharge?.toString() || '0',
+//         paymentMethod: data.paymentMethod,
+//         initialPaid: data.initialPaid?.toString() || '0',
+//         status: 'Active'
+//       })
+//       .returning();
+
+//     // Insert order items
+//     if (data.items && data.items.length > 0) {
+//       await Promise.all(
+//         data.items.map(item =>
+//           tx.insert(orderItems).values({
+//             orderId: orderRow.id,
+//             productId: item.productId,
+//             quantity: item.quantity,
+//             productRate: item.productRate.toString(),
+//             rentRate: item.rentRate.toString(),
+//             numberOfDays: item.numberOfDays
+//           })
+//         )
+//       );
+//     }
+
+//     return orderRow;
+//   });
+
+//   // Return complete order
+//   const completeOrder = await getOrderById(result.id);
+//   if (!completeOrder) {
+//     throw new Error('Failed to create order');
+//   }
+
+//   return completeOrder;
+// }
+
 export async function createOrder(data: CreateOrderData): Promise<Order> {
-  // Start transaction
-  const result = await db.transaction(async (tx) => {
-    // Insert order
-    const [orderRow] = await tx
+  // Build a map of productId -> totalQty ordered in this request
+  const qtyByProduct = new Map<string, number>();
+  for (const it of data.items ?? []) {
+    qtyByProduct.set(it.productId, (qtyByProduct.get(it.productId) ?? 0) + it.quantity);
+  }
+
+  const orderRow = await db.transaction(async (tx) => {
+    // 1) Reserve stock: decrement quantities with an atomic conditional update
+    for (const [productId, totalQty] of qtyByProduct.entries()) {
+      const updated = await tx
+        .update(products)
+        .set({
+          // quantity = quantity - totalQty
+          quantity: sql`${products.quantity} - ${totalQty}`,
+        })
+        .where(
+          and(
+            eq(products.id, productId),
+            gte(products.quantity, totalQty) // only if enough stock
+          )
+        )
+        .returning({ id: products.id, remaining: products.quantity });
+
+      if (updated.length === 0) {
+        // not enough stock or product missing -> abort whole transaction
+        throw new Error(`Insufficient stock for product ${productId}`);
+      }
+    }
+
+    // 2) Insert order
+    const [createdOrder] = await tx
       .insert(orders)
       .values({
         customerId: data.customerId,
@@ -309,34 +385,30 @@ export async function createOrder(data: CreateOrderData): Promise<Order> {
         deliveryCharge: data.deliveryCharge?.toString() || '0',
         paymentMethod: data.paymentMethod,
         initialPaid: data.initialPaid?.toString() || '0',
-        status: 'Active'
+        status: 'Active',
       })
       .returning();
 
-    // Insert order items
-    if (data.items && data.items.length > 0) {
-      await Promise.all(
-        data.items.map(item =>
-          tx.insert(orderItems).values({
-            orderId: orderRow.id,
-            productId: item.productId,
-            quantity: item.quantity,
-            productRate: item.productRate.toString(),
-            rentRate: item.rentRate.toString(),
-            numberOfDays: item.numberOfDays
-          })
-        )
+    // 3) Insert items (bulk)
+    if ((data.items?.length ?? 0) > 0) {
+      await tx.insert(orderItems).values(
+        data.items!.map((item) => ({
+          orderId: createdOrder.id,
+          productId: item.productId,
+          quantity: item.quantity,
+          productRate: item.productRate.toString(),
+          rentRate: item.rentRate.toString(),
+          numberOfDays: item.numberOfDays,
+        }))
       );
     }
 
-    return orderRow;
+    return createdOrder;
   });
 
-  // Return complete order
-  const completeOrder = await getOrderById(result.id);
-  if (!completeOrder) {
-    throw new Error('Failed to create order');
-  }
+  // 4) Return the fully-hydrated order
+  const completeOrder = await getOrderById(orderRow.id);
+  if (!completeOrder) throw new Error('Failed to create order');
 
   return completeOrder;
 }
@@ -345,7 +417,7 @@ export async function createOrder(data: CreateOrderData): Promise<Order> {
 export async function updateOrderStatus(id: string, status: 'Active' | 'Completed' | 'Cancelled'): Promise<Order> {
   const [orderRow] = await db
     .update(orders)
-    .set({ 
+    .set({
       status,
       updatedAt: new Date().toISOString()
     })
@@ -390,7 +462,7 @@ export async function updateOrder(id: string, data: Partial<CreateOrderData>): P
     if (data.items) {
       // Delete existing items
       await tx.delete(orderItems).where(eq(orderItems.orderId, id));
-      
+
       // Insert new items
       if (data.items.length > 0) {
         await Promise.all(
@@ -424,10 +496,10 @@ export async function deleteOrder(id: string): Promise<boolean> {
   const result = await db.transaction(async (tx) => {
     // Delete order items first (cascade should handle this, but being explicit)
     await tx.delete(orderItems).where(eq(orderItems.orderId, id));
-    
+
     // Delete order
     const result = await tx.delete(orders).where(eq(orders.id, id));
-    
+
     return result;
   });
 

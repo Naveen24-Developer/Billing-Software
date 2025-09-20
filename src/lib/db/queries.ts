@@ -300,3 +300,94 @@ export async function createOrder(data: OrderFormData) {
     client.release();
   }
 }
+
+/**
+ * Fetch all orders with customer/vehicle info and totals
+ */
+export async function getOrders(): Promise<OrderRow[]> {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT
+        o.id,
+        o.customer_id,
+        c.name AS customer_name,
+        o.delivery_address,
+        o.pickup_required,
+        o.vehicle_id,
+        v.number AS vehicle_number,
+        o.remarks,
+        o.discount_type,
+        o.discount_value,
+        o.delivery_charge,
+        o.payment_method,
+        o.initial_paid,
+        o.status,
+        o.created_at,
+        o.updated_at,
+        -- totals
+        COALESCE(SUM(oi.quantity * oi.rent_rate * oi.number_of_days), 0) 
+          + o.delivery_charge - o.discount_value AS total_amount,
+        (
+          COALESCE(SUM(oi.quantity * oi.rent_rate * oi.number_of_days), 0) 
+          + o.delivery_charge - o.discount_value
+        ) - o.initial_paid AS remaining_amount
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id::uuid -- if still uuid
+      LEFT JOIN vehicles v ON v.id = o.vehicle_id
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      GROUP BY 
+        o.id, c.name, v.number
+      ORDER BY o.created_at DESC
+    `);
+
+    return result.rows.map((row) => ({
+      ...row,
+      discount_value: Number(row.discount_value),
+      delivery_charge: Number(row.delivery_charge),
+      initial_paid: Number(row.initial_paid),
+      total_amount: Number(row.total_amount),
+      remaining_amount: Number(row.remaining_amount),
+    }));
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Fetch items for a specific order
+ */
+export async function getOrderItemsByOrderId(orderId: string): Promise<OrderItemRow[]> {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `
+      SELECT
+        oi.id,
+        oi.order_id,
+        oi.product_id,
+        p.name AS product_name,
+        oi.quantity,
+        oi.product_rate,
+        oi.rent_rate,
+        oi.number_of_days,
+        oi.created_at
+      FROM order_items oi
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = $1
+      ORDER BY oi.created_at ASC
+      `,
+      [orderId]
+    );
+
+    return result.rows.map((row) => ({
+      ...row,
+      quantity: Number(row.quantity),
+      product_rate: Number(row.product_rate),
+      rent_rate: Number(row.rent_rate),
+      number_of_days: Number(row.number_of_days),
+    }));
+  } finally {
+    client.release();
+  }
+}

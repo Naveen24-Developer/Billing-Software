@@ -47,36 +47,12 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < body.items.length; i++) {
       const it = body.items[i];
-      // if (!isUuid(it?.product_id)) {
-      //   return NextResponse.json(
-      //     { success: false, error: `Invalid items[${i}].product_id (must be UUID)` },
-      //     { status: 400 }
-      //   );
-      // }
       if (!Number.isFinite(Number(it?.quantity)) || Number(it.quantity) <= 0) {
         return NextResponse.json(
           { success: false, error: `Invalid items[${i}].quantity` },
           { status: 400 }
         );
       }
-      // if (!Number.isFinite(Number(it?.product_rate))) {
-      //   return NextResponse.json(
-      //     { success: false, error: `Invalid items[${i}].product_rate` },
-      //     { status: 400 }
-      //   );
-      // }
-      // if (!Number.isFinite(Number(it?.rent_rate))) {
-      //   return NextResponse.json(
-      //     { success: false, error: `Invalid items[${i}].rent_rate` },
-      //     { status: 400 }
-      //   );
-      // }
-      // if (!Number.isFinite(Number(it?.number_of_days)) || Number(it.number_of_days) <= 0) {
-      //   return NextResponse.json(
-      //     { success: false, error: `Invalid items[${i}].number_of_days` },
-      //     { status: 400 }
-      //   );
-      // }
     }
 
     // All good -> create
