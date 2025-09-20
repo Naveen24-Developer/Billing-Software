@@ -54,17 +54,16 @@ const formSchema = z.object({
 type OrderFormValues = z.infer<typeof formSchema>;
 
 export default function CreateOrderPage() {
-  const { customers, addCustomer, isLoading: areCustomersLoading } = useCustomers();
+  const { addCustomer, isLoading: areCustomersLoading } = useCustomers();
   const [isCustomerDialogOpen, setIsCustomerDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<{ index: number; data: OrderItemFormValues } | null>(null);
-
+  const { data: customersResponse, error, isLoading, mutate } = useSWR('/api/customers', fetcher);
   const router = useRouter();
   const { toast } = useToast();
-
+  const customers = customersResponse?.success ? customersResponse.data : [];
   // Fetch products and vehicles from API
   const { data: productsResponse, error: productsError, isLoading: productsLoading } = useSWR('/api/products', fetcher);
   const { data: vehiclesResponse, error: vehiclesError, isLoading: vehiclesLoading } = useSWR('/api/vehicles', fetcher);
@@ -93,7 +92,7 @@ export default function CreateOrderPage() {
     control: form.control,
     name: 'items',
   });
-  
+
   const watchedFormValues = form.watch();
 
   const priceDetails: PriceDetails = useMemo(() => {
@@ -110,32 +109,70 @@ export default function CreateOrderPage() {
     } else if (discountType === 'percentage') {
       discountAmount = price * (discountVal / 100);
     }
-    
+
     const deliveryChargeVal = Number(deliveryCharge) || 0;
     const total = price - discountAmount + deliveryChargeVal;
     const remainingAmount = total - (Number(initialPaid) || 0);
 
     return { price, discountAmount, deliveryCharge: deliveryChargeVal, total, remainingAmount };
   }, [watchedFormValues]);
-  
+
   useEffect(() => {
     if (selectedCustomer) {
       form.setValue('customerId', selectedCustomer.id);
       form.setValue('deliveryAddress', selectedCustomer.address || '');
     } else {
-        form.setValue('customerId', '');
-        form.setValue('deliveryAddress', '');
+      form.setValue('customerId', '');
+      form.setValue('deliveryAddress', '');
     }
   }, [selectedCustomer, form]);
 
-  const handleSaveCustomer = async (customerData: Omit<Customer, 'id' | 'createdAt'>) => {
+  const handleSaveCustomer = async (
+    customerData: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>
+  ) => {
     try {
-      const newCustomer = await addCustomer(customerData);
+      // build API payload (snake_case expected by your route/DB)
+      const payload = {
+        name: customerData.name,
+        phone: customerData.phone,
+        address: customerData.address ?? null,
+        aadhar: customerData.aadhar ?? null,
+        referred_by: customerData.referredBy ?? null,
+      };
+
+      const response = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await response.json().catch(() => ({}));
+
+      if (!response.ok || json?.success === false) {
+        throw new Error(json?.error || 'Failed to create customer');
+      }
+
+      // map API (snake_case) -> UI (camelCase)
+      const c = json.data;
+      const newCustomer: Customer = {
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        address: c.address ?? null,
+        aadhar: c.aadhar ?? null,
+        referredBy: c.referred_by ?? c.referredBy ?? null,
+        createdAt: c.created_at ?? c.createdAt,   // your API returns snake_case        
+      };
+
       setSelectedCustomer(newCustomer);
       setIsCustomerDialogOpen(false);
       toast({ title: 'Customer added successfully' });
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error saving customer', description: error.message });
+      toast({
+        variant: 'destructive',
+        title: 'Error saving customer',
+        description: error?.message || 'Please try again.',
+      });
     }
   };
 
@@ -147,7 +184,7 @@ export default function CreateOrderPage() {
     }
     setIsItemDialogOpen(true);
   };
-  
+
   const handleSaveItem = (data: OrderItemFormValues) => {
     if (editingItem) {
       update(editingItem.index, data);
@@ -165,7 +202,7 @@ export default function CreateOrderPage() {
     }
 
     setIsSubmitting(true);
-    
+
     try {
       // Prepare order data for API
       const orderData: CreateOrderData = {
@@ -202,7 +239,7 @@ export default function CreateOrderPage() {
         throw new Error(result.error || 'Failed to create order');
       }
 
-      toast({ 
+      toast({
         title: 'Order created successfully',
         description: `Order ${result.data.id} has been created.`
       });
@@ -211,9 +248,9 @@ export default function CreateOrderPage() {
       router.push('/orders');
     } catch (error: any) {
       console.error('Error creating order:', error);
-      toast({ 
+      toast({
         variant: 'destructive',
-        title: 'Error creating order', 
+        title: 'Error creating order',
         description: error.message || 'An unexpected error occurred'
       });
     } finally {
@@ -257,8 +294,8 @@ export default function CreateOrderPage() {
                 <CardDescription>Add utensils to the order.</CardDescription>
               </div>
               <Button size="sm" type="button" onClick={() => handleOpenItemDialog()}>
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Add Item
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add Item
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -284,12 +321,12 @@ export default function CreateOrderPage() {
               {form.formState.errors.items?.root && <p className="text-sm font-medium text-destructive mt-2">{form.formState.errors.items.root.message}</p>}
               {fields.length === 0 && (
                 <div className="text-center text-sm text-muted-foreground py-8">
-                    <p>No items added yet.</p>
+                  <p>No items added yet.</p>
                 </div>
               )}
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader><CardTitle>Delivery & Remarks</CardTitle></CardHeader>
             <CardContent className="space-y-6">
@@ -300,14 +337,14 @@ export default function CreateOrderPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="flex items-center space-x-2">
-                    <Controller
-                      control={form.control}
-                      name="pickupRequired"
-                      render={({ field }) => (
-                        <Switch id="pickup-required" checked={field.value} onCheckedChange={field.onChange} />
-                      )}
-                    />
-                    <Label htmlFor="pickup-required" className="cursor-pointer">Pickup Required</Label>
+                  <Controller
+                    control={form.control}
+                    name="pickupRequired"
+                    render={({ field }) => (
+                      <Switch id="pickup-required" checked={field.value} onCheckedChange={field.onChange} />
+                    )}
+                  />
+                  <Label htmlFor="pickup-required" className="cursor-pointer">Pickup Required</Label>
                 </div>
                 {form.watch('pickupRequired') && (
                   <div className="space-y-2">
@@ -329,7 +366,7 @@ export default function CreateOrderPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="remarks">Remarks</Label>
-                <Textarea id="remarks" placeholder="Add any special instructions or notes here" {...form.register('remarks')}/>
+                <Textarea id="remarks" placeholder="Add any special instructions or notes here" {...form.register('remarks')} />
               </div>
             </CardContent>
           </Card>
@@ -358,31 +395,31 @@ export default function CreateOrderPage() {
                         control={form.control}
                         name="customerId"
                         render={({ field }) => (
-                            <Select onValueChange={(value) => {
-                              const customer = customers.find(c => c.id === value);
-                              setSelectedCustomer(customer || null);
-                              field.onChange(value);
-                            }} defaultValue={field.value} disabled={areCustomersLoading}>
+                          <Select onValueChange={(value) => {
+                            const customer = customers?.find((c: any) => c.id === value);
+                            setSelectedCustomer(customer || null);
+                            field.onChange(value);
+                          }} defaultValue={field.value} disabled={areCustomersLoading}>
                             <SelectTrigger><SelectValue placeholder={areCustomersLoading ? "Loading..." : "Select a customer"} /></SelectTrigger>
                             <SelectContent>
-                              {customers.map((customer) => (
-                                  <SelectItem key={customer.id} value={customer.id}>
-                                    <div>
-                                      <p>{customer.name}</p>
-                                      <p className="text-xs text-muted-foreground">{customer.phone}</p>
-                                    </div>
-                                  </SelectItem>
+                              {customers?.map((customer: any, index: number) => (
+                                <SelectItem key={index} value={customer.id}>
+                                  <div>
+                                    <p>{customer.name}</p>
+                                    <p className="text-xs text-muted-foreground">{customer.phone}</p>
+                                  </div>
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                        )}    
+                        )}
                       />
-                      <CustomerFormDialog 
+                      <CustomerFormDialog
                         onSave={handleSaveCustomer}
                         open={isCustomerDialogOpen}
                         onOpenChange={setIsCustomerDialogOpen}
                       >
-                         <Button type="button" size="icon" onClick={() => setIsCustomerDialogOpen(true)}>
+                        <Button type="button" size="icon" onClick={() => setIsCustomerDialogOpen(true)}>
                           <PlusCircle />
                         </Button>
                       </CustomerFormDialog>
@@ -396,7 +433,7 @@ export default function CreateOrderPage() {
                     <span className="text-muted-foreground">Subtotal</span>
                     <span>₹{priceDetails.price.toFixed(2)}</span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <Label className="text-muted-foreground">Discount</Label>
                     <div className="flex items-center gap-2 w-3/5">
@@ -421,7 +458,7 @@ export default function CreateOrderPage() {
                     <span className="text-muted-foreground">Discount Amount</span>
                     <span className="text-destructive">- ₹{priceDetails.discountAmount.toFixed(2)}</span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <Label className="text-muted-foreground">Delivery Charge</Label>
                     <div className="w-2/5">
@@ -435,7 +472,7 @@ export default function CreateOrderPage() {
                   <span>Total</span>
                   <span>₹{priceDetails.total.toFixed(2)}</span>
                 </div>
-                
+
                 <Separator />
 
                 <div className="space-y-4">
@@ -457,14 +494,14 @@ export default function CreateOrderPage() {
                     />
                   </div>
                   {form.formState.errors.paymentMethod && <p className="text-sm font-medium text-destructive text-right -mt-2">{form.formState.errors.paymentMethod.message}</p>}
-                  
+
                   <div className="flex items-center justify-between">
                     <Label>Initial Paid</Label>
                     <div className="w-2/5">
-                      <Input type="number" placeholder="0.00" className="h-9 text-right w-full" {...form.register('initialPaid')}/>
+                      <Input type="number" placeholder="0.00" className="h-9 text-right w-full" {...form.register('initialPaid')} />
                     </div>
                   </div>
-                  
+
                   <div className="flex justify-between font-semibold text-base bg-secondary/50 p-2 rounded-md">
                     <span>Remaining</span>
                     <span>₹{priceDetails.remainingAmount.toFixed(2)}</span>

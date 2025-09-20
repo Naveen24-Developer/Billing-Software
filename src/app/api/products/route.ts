@@ -1,26 +1,20 @@
+// src/app/api/products/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db/pg/db.pg';
-import { products } from '@/lib/db/pg/schema.pg';
-import { desc } from 'drizzle-orm';
+import { getProduct, createProduct } from '@/lib/db/queries';
 
 export async function GET() {
   try {
-    const productRows = await db
-      .select()
-      .from(products)
-      .orderBy(desc(products.createdAt));
-
-    const formattedProducts = productRows.map(product => ({
-      id: product.id,
-      name: product.name,
-      quantity: product.quantity,
-      rate: Number(product.rate),
-      rate_unit: product.rateUnit,
-      created_at: product.createdAt,
-      updated_at: product.updatedAt
+    const products = await getProduct();
+    const transformed = products.map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      quantity: Number(p.quantity),
+      rate: Number(p.rate),
+      rate_unit: p.rate_unit,    // keep snake_case for your API
+      created_at: p.created_at,
+      updated_at: p.updated_at,
     }));
-
-    return NextResponse.json({ success: true, data: formattedProducts });
+    return NextResponse.json({ success: true, data: transformed });
   } catch (error) {
     console.error('Failed to fetch products:', error);
     return NextResponse.json(
@@ -30,43 +24,66 @@ export async function GET() {
   }
 }
 
+type RateUnit = 'day' | 'hour' | 'month';
+function isRateUnit(value: any): value is RateUnit {
+  return value === 'day' || value === 'hour' || value === 'month';
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
-    // Validate required fields
-    if (!body.name || typeof body.quantity !== 'number' || typeof body.rate !== 'number' || !body.rate_unit) {
+
+    const name = String(body?.name ?? '').trim();
+    const quantity = Number(body?.quantity);
+    const rate = Number(body?.rate);
+    const rawRateUnit = String(body?.rate_unit ?? '').trim();
+
+    if (!name || !Number.isFinite(quantity) || !Number.isFinite(rate) || !isRateUnit(rawRateUnit)) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: name, quantity, rate, rate_unit' },
+        { success: false, error: 'Missing/invalid fields: name, quantity, rate, rate_unit' },
         { status: 400 }
       );
     }
 
-    const [product] = await db
-      .insert(products)
-      .values({
-        name: body.name,
-        quantity: body.quantity,
-        rate: body.rate.toString(),
-        rateUnit: body.rate_unit
-      })
-      .returning();
+    // Call queries layer (see reference implementation below)
+    const inserted = await createProduct({
+      name,
+      quantity,
+      rate,
+      rate_unit: rawRateUnit,
+    });
 
-    const formattedProduct = {
-      id: product.id,
-      name: product.name,
-      quantity: product.quantity,
-      rate: Number(product.rate),
-      rate_unit: product.rateUnit,
-      created_at: product.createdAt,
-      updated_at: product.updatedAt
+    // normalize output
+    const data = {
+      id: inserted.id,
+      name: inserted.name,
+      quantity: Number(inserted.quantity),
+      rate: Number(inserted.rate),
+      rate_unit: inserted.rate_unit,
+      created_at: inserted.created_at,
+      updated_at: inserted.updated_at,
     };
 
-    return NextResponse.json({ success: true, data: formattedProduct }, { status: 201 });
-  } catch (error) {
-    console.error('Failed to create product:', error);
+    return NextResponse.json({ success: true, data }, { status: 201 });
+  } catch (error: any) {
+    // log full DB error to server console
+    console.error('Failed to create product:', {
+      name: error?.name,
+      code: error?.code,
+      message: error?.message,
+      detail: error?.detail,
+      hint: error?.hint,
+      constraint: error?.constraint,
+    });
+
+    // In dev, return a bit more context so you can see the real reason
+    const meta =
+      process.env.NODE_ENV !== 'production'
+        ? { code: error?.code, message: error?.message, detail: error?.detail, hint: error?.hint }
+        : undefined;
+
     return NextResponse.json(
-      { success: false, error: 'Failed to create product' },
+      { success: false, error: 'Failed to create product', meta },
       { status: 500 }
     );
   }

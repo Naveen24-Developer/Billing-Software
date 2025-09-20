@@ -9,7 +9,7 @@ const getDatabaseConfig = () => {
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     };
   }
-  
+
   // Fallback to individual parameters
   return {
     host: process.env.POSTGRES_HOST || 'localhost',

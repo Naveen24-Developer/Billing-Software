@@ -15,64 +15,80 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+function isUuid(v: unknown): v is string {
+  return typeof v === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    
-    // Validate required fields
-    if (!body.customerId || !body.items || body.items.length === 0 || !body.paymentMethod || !body.deliveryAddress) {
+    const body = await req.json();
+
+    // Validate UUID fields
+    // if (!isUuid(body?.customer_id)) {
+    //   return NextResponse.json(
+    //     { success: false, error: 'Invalid customer_id (must be UUID)' },
+    //     { status: 400 }
+    //   );
+    // }
+    if (body?.vehicle_id !== undefined && body.vehicle_id !== null && !isUuid(body.vehicle_id)) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Missing required fields. Required: customerId, items (non-empty), paymentMethod, deliveryAddress' 
-        },
+        { success: false, error: 'Invalid vehicle_id (must be UUID or omitted)' },
         { status: 400 }
       );
     }
 
-    // Validate items structure
-    const hasValidItems = body.items.every((item: any) => 
-      item.productId && 
-      typeof item.quantity === 'number' && item.quantity > 0 &&
-      typeof item.productRate === 'number' && item.productRate >= 0 &&
-      typeof item.rentRate === 'number' && item.rentRate >= 0 &&
-      typeof item.numberOfDays === 'number' && item.numberOfDays > 0
-    );
-
-    if (!hasValidItems) {
+    if (!Array.isArray(body?.items) || body.items.length === 0) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Invalid items structure. Each item must have productId, quantity > 0, productRate >= 0, rentRate >= 0, numberOfDays > 0' 
-        },
+        { success: false, error: 'items are required (non-empty array)' },
         { status: 400 }
       );
     }
 
-    // Prepare order data
-    const orderData: CreateOrderData = {
-      customerId: body.customerId,
-      items: body.items,
-      deliveryAddress: body.deliveryAddress,
-      pickupRequired: body.pickupRequired !== undefined ? body.pickupRequired : true,
-      vehicleId: body.vehicleId || undefined,
-      remarks: body.remarks || undefined,
-      discountType: body.discountType || undefined,
-      discountValue: body.discountValue || undefined,
-      deliveryCharge: body.deliveryCharge || undefined,
-      paymentMethod: body.paymentMethod,
-      initialPaid: body.initialPaid || undefined
-    };
+    for (let i = 0; i < body.items.length; i++) {
+      const it = body.items[i];
+      // if (!isUuid(it?.product_id)) {
+      //   return NextResponse.json(
+      //     { success: false, error: `Invalid items[${i}].product_id (must be UUID)` },
+      //     { status: 400 }
+      //   );
+      // }
+      if (!Number.isFinite(Number(it?.quantity)) || Number(it.quantity) <= 0) {
+        return NextResponse.json(
+          { success: false, error: `Invalid items[${i}].quantity` },
+          { status: 400 }
+        );
+      }
+      // if (!Number.isFinite(Number(it?.product_rate))) {
+      //   return NextResponse.json(
+      //     { success: false, error: `Invalid items[${i}].product_rate` },
+      //     { status: 400 }
+      //   );
+      // }
+      // if (!Number.isFinite(Number(it?.rent_rate))) {
+      //   return NextResponse.json(
+      //     { success: false, error: `Invalid items[${i}].rent_rate` },
+      //     { status: 400 }
+      //   );
+      // }
+      // if (!Number.isFinite(Number(it?.number_of_days)) || Number(it.number_of_days) <= 0) {
+      //   return NextResponse.json(
+      //     { success: false, error: `Invalid items[${i}].number_of_days` },
+      //     { status: 400 }
+      //   );
+      // }
+    }
 
-    const order = await createOrder(orderData);
-    return NextResponse.json({ success: true, data: order }, { status: 201 });
-  } catch (error) {
-    console.error('Failed to create order:', error);
+    // All good -> create
+    const created = await createOrder(body);
+    return NextResponse.json({ success: true, data: created }, { status: 201 });
+
+  } catch (e: any) {
+    console.error('Failed to create order:', {
+      code: e?.code, message: e?.message, detail: e?.detail, hint: e?.hint
+    });
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to create order' 
-      },
+      { success: false, error: 'Failed to create order' },
       { status: 500 }
     );
   }

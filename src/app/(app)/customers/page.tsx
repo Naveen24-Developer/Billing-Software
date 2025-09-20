@@ -39,7 +39,7 @@ export default function CustomersPage() {
           },
           body: JSON.stringify(customerData),
         });
-        
+
         if (!response.ok) {
           throw new Error('Failed to update customer');
         }
@@ -52,12 +52,12 @@ export default function CustomersPage() {
           },
           body: JSON.stringify(customerData),
         });
-        
+
         if (!response.ok) {
           throw new Error('Failed to create customer');
         }
       }
-      
+
       // Refresh the data
       mutate();
     } catch (error) {
@@ -71,11 +71,11 @@ export default function CustomersPage() {
       const response = await fetch(`/api/customers/${id}`, {
         method: 'DELETE',
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to delete customer');
       }
-      
+
       // Refresh the data
       mutate();
     } catch (error) {
@@ -83,7 +83,7 @@ export default function CustomersPage() {
       // You might want to show a toast notification here
     }
   };
-  
+
   const handleOpenDialog = (customer: CustomerProps | null = null) => {
     setSelectedCustomer(customer);
     setIsDialogOpen(true);
@@ -126,10 +126,10 @@ export default function CustomersPage() {
         <div className="flex flex-wrap items-center gap-4">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input 
-              type="search" 
-              placeholder="Search customers..." 
-              className="pl-8" 
+            <Input
+              type="search"
+              placeholder="Search customers..."
+              className="pl-8"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -140,9 +140,9 @@ export default function CustomersPage() {
           </Button>
         </div>
       </div>
-      
-      <CustomerFormDialog 
-        customer={selectedCustomer} 
+
+      <CustomerFormDialog
+        customer={selectedCustomer}
         onSave={handleSaveCustomer}
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}

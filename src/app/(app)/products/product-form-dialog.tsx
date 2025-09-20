@@ -114,7 +114,7 @@ export default function ProductFormDialog({
               )}
             />
             <div className="grid grid-cols-2 gap-4">
-               <FormField
+              <FormField
                 control={form.control}
                 name="rate"
                 render={({ field }) => (
@@ -127,14 +127,14 @@ export default function ProductFormDialog({
                   </FormItem>
                 )}
               />
-               <FormField
+              <FormField
                 control={form.control}
                 name="rate_unit"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Unit</FormLabel>
-                     <Select onValueChange={field.onChange} defaultValue={field.value}>
-                       <FormControl>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select a unit" />
                         </SelectTrigger>
@@ -150,7 +150,7 @@ export default function ProductFormDialog({
                 )}
               />
             </div>
-             <DialogFooter className='pt-4'>
+            <DialogFooter className='pt-4'>
               <DialogClose asChild>
                 <Button type="button" variant="outline">Cancel</Button>
               </DialogClose>

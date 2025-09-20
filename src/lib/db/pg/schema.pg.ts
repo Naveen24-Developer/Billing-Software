@@ -14,7 +14,7 @@ import {
 export const discountTypeEnum = pgEnum("discount_type", ["fixed", "percentage"]);
 export const orderStatusEnum = pgEnum("order_status", [
   "Active",
-  "Completed", 
+  "Completed",
   "Cancelled",
 ]);
 export const rateUnitEnum = pgEnum("rate_unit", ["day", "hour", "month"]);
@@ -64,7 +64,7 @@ export const vehicles = pgTable('vehicles', {
 // --- Orders Table ---
 export const orders = pgTable('orders', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(),
+  customerId: text('customer_id').notNull(),
   deliveryAddress: text('delivery_address').notNull(),
   pickupRequired: boolean('pickup_required').default(true).notNull(),
   vehicleId: uuid('vehicle_id').references(() => vehicles.id, { onDelete: 'set null' }),

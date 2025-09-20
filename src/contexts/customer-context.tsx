@@ -35,7 +35,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
   const deleteCustomer = (id: string) => {
     setCustomers(customers.filter(c => c.id !== id));
   };
-  
+
   const getCustomerById = (id: string) => {
     return customers.find(c => c.id === id);
   }
