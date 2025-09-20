@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -6,7 +5,6 @@ import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,13 +13,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { PlusCircle, Trash2, Edit } from 'lucide-react';
-import { mockProducts, mockVehicles, mockOrders } from '@/lib/data';
-import type { Customer, Product, Order, PriceDetails, OrderItem } from '@/lib/types';
-import CustomerFormDialog from '@/app/(app)/customers/customer-form-dialog';
 import { Switch } from '@/components/ui/switch';
 import { useCustomers } from '@/contexts/customer-context';
 import OrderItemDialog from './order-item-dialog';
+import CustomerFormDialog from '@/app/(app)/customers/customer-form-dialog';
 import type { OrderItemFormValues } from './order-item-dialog';
+import { useToast } from '@/hooks/use-toast';
+import type { Customer, Product, Vehicle, PriceDetails, CreateOrderData } from '@/lib/types';
+import useSWR from 'swr';
+
+const fetcher = (url: string) => fetch(url).then(res => {
+  if (!res.ok) {
+    throw new Error('Failed to fetch');
+  }
+  return res.json();
+});
 
 const orderItemSchema = z.object({
   productId: z.string().min(1, 'Product is required'),
@@ -48,15 +54,23 @@ const formSchema = z.object({
 type OrderFormValues = z.infer<typeof formSchema>;
 
 export default function CreateOrderPage() {
-  const { customers, addCustomer } = useCustomers();
-  const [products] = useState<Product[]>(mockProducts);
+  const { customers, addCustomer, isLoading: areCustomersLoading } = useCustomers();
   const [isCustomerDialogOpen, setIsCustomerDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<{ index: number; data: OrderItemFormValues } | null>(null);
 
   const router = useRouter();
+  const { toast } = useToast();
+
+  // Fetch products and vehicles from API
+  const { data: productsResponse, error: productsError, isLoading: productsLoading } = useSWR('/api/products', fetcher);
+  const { data: vehiclesResponse, error: vehiclesError, isLoading: vehiclesLoading } = useSWR('/api/vehicles', fetcher);
+
+  const products: Product[] = productsResponse?.success ? productsResponse.data : [];
+  const vehicles: Vehicle[] = vehiclesResponse?.success ? vehiclesResponse.data : [];
 
   const form = useForm<OrderFormValues>({
     resolver: zodResolver(formSchema),
@@ -114,10 +128,15 @@ export default function CreateOrderPage() {
     }
   }, [selectedCustomer, form]);
 
-  const handleSaveCustomer = (customerData: Omit<Customer, 'id' | 'createdAt'>) => {
-      const newCustomer = addCustomer(customerData);
+  const handleSaveCustomer = async (customerData: Omit<Customer, 'id' | 'createdAt'>) => {
+    try {
+      const newCustomer = await addCustomer(customerData);
       setSelectedCustomer(newCustomer);
       setIsCustomerDialogOpen(false);
+      toast({ title: 'Customer added successfully' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error saving customer', description: error.message });
+    }
   };
 
   const handleOpenItemDialog = (index?: number) => {
@@ -144,29 +163,80 @@ export default function CreateOrderPage() {
       form.setError('customerId', { type: 'manual', message: 'Please select a customer.' });
       return;
     }
-    console.log(values);
-    
-    const newOrder: Order = {
-      id: `ORD${(mockOrders.length + 1).toString().padStart(3, '0')}`,
-      customer: selectedCustomer,
-      items: values.items as OrderItem[],
-      priceDetails: priceDetails,
-      deliveryAddress: values.deliveryAddress,
-      pickupRequired: values.pickupRequired,
-      vehicleId: values.vehicleId,
-      remarks: values.remarks,
-      discountType: values.discountType,
-      discountValue: values.discountValue,
-      paymentMethod: values.paymentMethod,
-      initialPaid: values.initialPaid,
-      createdAt: new Date().toISOString(),
-      status: 'Active',
-    };
-    mockOrders.unshift(newOrder);
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    setIsSubmitting(true);
     
-    router.push('/reports');
+    try {
+      // Prepare order data for API
+      const orderData: CreateOrderData = {
+        customerId: values.customerId,
+        items: values.items.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          productRate: item.productRate,
+          rentRate: item.rentRate,
+          numberOfDays: item.numberOfDays
+        })),
+        deliveryAddress: values.deliveryAddress,
+        pickupRequired: values.pickupRequired,
+        vehicleId: values.vehicleId || undefined,
+        remarks: values.remarks || undefined,
+        discountType: values.discountType,
+        discountValue: values.discountValue,
+        deliveryCharge: values.deliveryCharge,
+        paymentMethod: values.paymentMethod,
+        initialPaid: values.initialPaid
+      };
+
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(orderData),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to create order');
+      }
+
+      toast({ 
+        title: 'Order created successfully',
+        description: `Order ${result.data.id} has been created.`
+      });
+
+      // Navigate to orders list or order details
+      router.push('/orders');
+    } catch (error: any) {
+      console.error('Error creating order:', error);
+      toast({ 
+        variant: 'destructive',
+        title: 'Error creating order', 
+        description: error.message || 'An unexpected error occurred'
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Show loading state
+  if (areCustomersLoading || productsLoading || vehiclesLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (productsError || vehiclesError) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-lg text-red-600">Error loading data. Please refresh the page.</div>
+      </div>
+    );
   }
 
   return (
@@ -178,8 +248,8 @@ export default function CreateOrderPage() {
         products={products}
         item={editingItem?.data}
       />
-      <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
-        <div className="lg:col-span-2 space-y-8">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start -mt-4">
+        <div className="lg:col-span-2 space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -221,7 +291,7 @@ export default function CreateOrderPage() {
           </Card>
           
           <Card>
-            <CardHeader><CardTitle>Delivery &amp; Remarks</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Delivery & Remarks</CardTitle></CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="address">Delivery Address *</Label>
@@ -249,7 +319,7 @@ export default function CreateOrderPage() {
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <SelectTrigger><SelectValue placeholder="Select a vehicle" /></SelectTrigger>
                           <SelectContent>
-                            {mockVehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.number}</SelectItem>)}
+                            {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.number}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       )}
@@ -266,13 +336,13 @@ export default function CreateOrderPage() {
 
         </div>
 
-        <div className="lg:col-span-1 space-y-8">
-          <div className="sticky top-20">
+        <div className="lg:col-span-1 space-y-4">
+          <div className="sticky top-4">
             <Card className="flex flex-col">
               <CardHeader>
                 <CardTitle>Order Summary</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4 overflow-y-auto max-h-[calc(100vh-15rem)]">
+              <CardContent className="space-y-4 overflow-y-auto max-h-[calc(100vh-12rem)]">
                 <div>
                   {selectedCustomer ? (
                     <div className="flex items-center justify-between mt-2 p-3 border rounded-lg bg-secondary/30">
@@ -292,8 +362,8 @@ export default function CreateOrderPage() {
                               const customer = customers.find(c => c.id === value);
                               setSelectedCustomer(customer || null);
                               field.onChange(value);
-                            }} defaultValue={field.value}>
-                            <SelectTrigger><SelectValue placeholder="Select a customer" /></SelectTrigger>
+                            }} defaultValue={field.value} disabled={areCustomersLoading}>
+                            <SelectTrigger><SelectValue placeholder={areCustomersLoading ? "Loading..." : "Select a customer"} /></SelectTrigger>
                             <SelectContent>
                               {customers.map((customer) => (
                                   <SelectItem key={customer.id} value={customer.id}>
@@ -312,7 +382,7 @@ export default function CreateOrderPage() {
                         open={isCustomerDialogOpen}
                         onOpenChange={setIsCustomerDialogOpen}
                       >
-                        <Button type="button" size="icon" onClick={() => setIsCustomerDialogOpen(true)}>
+                         <Button type="button" size="icon" onClick={() => setIsCustomerDialogOpen(true)}>
                           <PlusCircle />
                         </Button>
                       </CustomerFormDialog>
@@ -402,8 +472,8 @@ export default function CreateOrderPage() {
                 </div>
               </CardContent>
               <CardFooter className="mt-auto">
-                <Button type="submit" className="w-full" size="lg" disabled={form.formState.isSubmitting}>
-                  {form.formState.isSubmitting ? 'Placing Order...' : 'Place Order'}
+                <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+                  {isSubmitting ? 'Placing Order...' : 'Place Order'}
                 </Button>
               </CardFooter>
             </Card>

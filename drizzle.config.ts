@@ -2,14 +2,12 @@ import { defineConfig } from "drizzle-kit";
 import "dotenv/config";
 
 export default defineConfig({
-  schema: "./src/lib/db/pg/schema.pg.ts",
-  out: "./src/lib/db/migrations/pg",
+  schema: "./lib/db/schema.pg.ts",
+  out: "./lib/db/migrations",
   driver: "pg",
   dbCredentials: {
-    host: "localhost",
-    port: 5432,
-    user: "postgres",
-    password: "postgres",
-    database: "rental_management",
+    connectionString: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/rental_management",
   },
+  verbose: true,
+  strict: true,
 });

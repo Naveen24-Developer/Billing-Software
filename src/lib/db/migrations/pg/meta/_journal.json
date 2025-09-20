@@ -8,6 +8,27 @@
       "when": 1758185752744,
       "tag": "0000_zippy_vanisher",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1758264134742,
+      "tag": "0001_flippant_jazinda",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1758267129553,
+      "tag": "0002_sharp_hellion",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1758268596632,
+      "tag": "0003_magical_red_ghost",
+      "breakpoints": true
     }
   ]
 }
